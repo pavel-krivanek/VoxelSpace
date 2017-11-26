@@ -5,81 +5,50 @@ Class {
 		'colorMap',
 		'heightMap',
 		'screen',
-		'canvas'
+		'canvas',
+		'bits'
 	],
 	#category : #VoxelSpace
 }
 
 { #category : #accessing }
-VoxelSpace >> colorMap [
-	^ colorMap
-]
-
-{ #category : #accessing }
-VoxelSpace >> colorMap: anObject [
-	colorMap := anObject
-]
-
-{ #category : #rendering }
-VoxelSpace >> colorOf: aPoint [
-
-	| x y |
-	x := aPoint x asInteger abs \\ 1024.
-	y := aPoint y asInteger abs \\ 1024.
-	^ colorMap at: (y * 1024 + x +1)
-
-]
-
-{ #category : #rendering }
-VoxelSpace >> drawVerticalLine: i from: heightOnScreen to: screenHeight color: aColor [
-
-	canvas line: (i@heightOnScreen) to: (i@screenHeight) color: aColor
-]
-
-{ #category : #rendering }
 VoxelSpace >> heightOf: aPoint [
 
-	| x y |
-	x := aPoint x asInteger abs \\ 1024.
-	y := aPoint y asInteger abs \\ 1024.
-	^ heightMap at: (y * 1024 + x +1)
-
-"	| p r |
-	
-	p := (aPoint x asInteger abs \\ 1024) @ (aPoint y asInteger abs \\ 1024).
-	r := (heigthMap colorAt: p) red.
-	^ r*255.0"
+	^ heightMap at: (aPoint y asInteger abs \\ self mapSize) * self mapSize + (aPoint x asInteger abs \\ self mapSize) + 1
 ]
 
-{ #category : #rendering }
+{ #category : #initialization }
 VoxelSpace >> initialize [
 
 	| colorPng heigthPng |
 	
 	super initialize.
 	
-	colorMap := Array ofSize: 1024*1024.
-	heightMap := ByteArray ofSize: 1024*1024.
+	colorMap := Array ofSize: self mapSize*self mapSize.
+	heightMap := ByteArray ofSize: self mapSize*self mapSize.
 
 	colorPng := PNGReadWriter formFromFileNamed: 'C1W.png'.
 	heigthPng := PNGReadWriter formFromFileNamed: 'D1.png'.
 	
-	0 to: 1023 do: [:x |
-		0 to: 1023 do: [:y |
-			| index |
-			index := (y*1024)+x+1.
-			colorMap at: index put: ((colorPng colorAt: x@y)).
-			heightMap at: index put: ((heigthPng colorAt: x@y) red*255.0) asInteger.
-			
-			
-			]].
-	
 	screen := Form extent: 800 @ 600 depth: 32.
-	canvas := FormCanvas on: screen.
+
+	0 to: self mapSize-1 do: [:x |
+		0 to: self mapSize-1 do: [:y |
+			| index |
+			index := (y*self mapSize)+x+1.
+			colorMap at: index put: (screen bitPatternFor: (colorPng colorAt: x@y)).
+			heightMap at: index put: ((heigthPng colorAt: x@y) red*255.0) asInteger. ]].
+	
 
 ]
 
-{ #category : #rendering }
+{ #category : #'as yet unclassified' }
+VoxelSpace >> mapSize [
+
+	^ 1024
+]
+
+{ #category : #utility }
 VoxelSpace >> open [
 
 	screen asMorph openInWindow
@@ -90,96 +59,80 @@ VoxelSpace >> rebuildFormForWidth: width height: height [
 
 	(screen width ~= width or: [ screen height ~= height ])
 		ifTrue: [ 
-			screen := Form extent: width @ height depth: 32.
-			canvas := FormCanvas on: screen ].
+			screen := Form extent: width @ height depth: 32 ].
 ]
 
 { #category : #rendering }
-VoxelSpace >> render: p angle: phi height: height horizon: horizon scale: scaleHeight distance: distance screenWidth: screenWidth screenHeight: screenHeight [
+VoxelSpace >> render: position angle: angleInRadians height: height horizon: horizon scale: scaleHeight distance: distance screenWidth: screenWidth screenHeight: screenHeight [
 
-	| pleft pright dx heightOnScreen sinphi cosphi dy ybuffer dz z |
+	| dx heightOnScreen sinphi cosphi dy yBuffer dz z leftPointX leftPointY rightPointX rightPointY sinZ cosZ px py arrayIndex lastPointX lastPointY lastHeight lastColor invZ |
 
+	px := position x.
+	py := position y.
+	 	
 	self rebuildFormForWidth: screenWidth height: screenHeight.
 
-	screen fillWithColor: Color lightGray.
+	screen fillWithColor: (Color r: 0.486 g: 0.612 b: 0.721 alpha: 1.0).
+	
+	bits := BitBlt bitPokerToForm: screen.
 
-	sinphi := phi sin.
-   cosphi := phi cos.
+	sinphi := angleInRadians sin.
+   cosphi := angleInRadians cos.
 
-	ybuffer := Array new: screenWidth.
-	1 to: screenWidth do: [ :x | ybuffer at: x put: screenHeight ].
-	dz := 1.
-	z := 1.
-
+	yBuffer := IntegerArray new: screenWidth withAll: screenHeight.
+	dz := 1.0.
+	z := 1.0.
+	
+	lastHeight := lastColor := nil.
+	
 	[z <= distance] whileTrue: [ 
-		pleft := (((cosphi negated * z) - (sinphi * z)) + p x) 
-			@ (((sinphi * z) - (cosphi * z)) + p y).
-		pright := (((cosphi * z) - (sinphi * z)) + p x) 
-			@ (((sinphi negated * z) - (cosphi * z)) + p y).
+		sinZ := sinphi * z.
+		cosZ := cosphi * z.
+		invZ := scaleHeight / z.
+		leftPointX := cosZ negated - sinZ. 
+		leftPointY := sinZ - cosZ.
+		rightPointX := cosZ - sinZ.
+		rightPointY := sinZ negated - cosZ.
 			
-		dx := (pright x - pleft x) asFloat / screenWidth.
-		dy := (pright y - pleft y) asFloat / screenWidth.
+		dx := (rightPointX - leftPointX) / screenWidth.
+		dy := (rightPointY - leftPointY) / screenWidth.
 		
-		1 to: screenWidth do: [ :i |
-			heightOnScreen := (height - (self heightOf: pleft x@pleft y)) / z * scaleHeight + horizon.
-			heightOnScreen := heightOnScreen max: 0.
-			heightOnScreen := heightOnScreen min: screenHeight.
-			(heightOnScreen < ((ybuffer at: i))) 
-				ifTrue: [
-					self drawVerticalLine: i from: heightOnScreen to: ((ybuffer at: i)) color: (self colorOf: pleft x@pleft y).
-					ybuffer at: i put: heightOnScreen ].
-			pleft setX: pleft x + dx setY: pleft y.
-			pleft setX: pleft x setY: pleft y + dy. ].
+		leftPointX := leftPointX + px.
+		leftPointY := leftPointY + py.
+		
+		1 to: screenWidth do: [ :x |
+			| currentY |
+			currentY := yBuffer at: x.
+
+			lastPointX := lastPointY := nil.
+			
+			(leftPointX asInteger = lastPointX and: [ leftPointY asInteger = lastPointY ])
+				ifFalse: [ 
+					arrayIndex := (leftPointY asInteger abs \\ self mapSize) * self mapSize + (leftPointX asInteger abs \\ self mapSize) + 1.
+					heightOnScreen := ((height - (lastHeight := heightMap at: arrayIndex)) * invZ + horizon) asInteger.					
+					(heightOnScreen < currentY) 
+						ifTrue: [
+							heightOnScreen := heightOnScreen min: screenHeight.
+							bits drawVerticalLine: (x-1) from: heightOnScreen to: currentY color: (lastColor := colorMap at: arrayIndex).
+							yBuffer at: x put: heightOnScreen ].
+					lastPointX := leftPointX asInteger.
+					lastPointY := leftPointY asInteger. ]
+			ifTrue: [
+					heightOnScreen := ((height - (lastHeight)) * invZ + horizon) asInteger.					
+					(heightOnScreen < currentY) 
+						ifTrue: [
+							heightOnScreen := heightOnScreen min: screenHeight.
+							bits drawVerticalLine: (x-1) from: heightOnScreen to: currentY color: lastColor.
+							yBuffer at: x put: heightOnScreen ] ].
+			
+			leftPointX := leftPointX + dx.
+			leftPointY := leftPointY + dy. ].
 		
 		z := z + dz.
 		dz := dz + 0.01].
 ]
 
-{ #category : #rendering }
-VoxelSpace >> render: p height: height horizon: horizon scale: scaleHeight distance: distance screenWidth: screenWidth screenHeight: screenHeight [
-
-	| pleft pright dx heightOnScreen |
-
-	distance to: 1 by: -1 do: [ :z |
-		pleft := (z negated + p x) @ (z negated + p y).
-		pright := (z + p x) @ (z negated + p y).
-		dx := (pright x - pleft x) asFloat / screenWidth.
-		
-		0 to: screenWidth do: [ :i |
-			heightOnScreen := (height - (self heightOf: pleft x@pleft y)) / z * scaleHeight + horizon.
-			self drawVerticalLine: i from: heightOnScreen to: screenHeight color: (self colorOf: pleft x@pleft y).
-			pleft setX: pleft x + dx setY: pleft y ]]
-]
-
-{ #category : #rendering }
-VoxelSpace >> renderSlow: p angle: phi height: height horizon: horizon scale: scaleHeight distance: distance screenWidth: screenWidth screenHeight: screenHeight [
-
-	| pleft pright dx heightOnScreen sinphi cosphi dy |
-
-	sinphi := phi sin.
-   cosphi := phi cos.
-
-	distance to: 1 by: -1 do: [ :z |
-		pleft := (((cosphi negated * z) - (sinphi * z)) + p x) 
-			@ (((sinphi * z) - (cosphi * z)) + p y).
-		pright := (((cosphi * z) - (sinphi * z)) + p x) 
-			@ (((sinphi negated * z) - (cosphi * z)) + p y).
-			
-		dx := (pright x - pleft x) asFloat / screenWidth.
-		dy := (pright y - pleft y) asFloat / screenWidth.
-		
-		0 to: screenWidth do: [ :i |
-			heightOnScreen := (height - (self heightOf: pleft x@pleft y)) / z * scaleHeight + horizon.
-			heightOnScreen := heightOnScreen asInteger.
-			heightOnScreen := heightOnScreen max: 0.
-			heightOnScreen := heightOnScreen min: screenHeight.
-			self drawVerticalLine: i from: heightOnScreen to: screenHeight color: (self colorOf: pleft x@pleft y).
-			pleft setX: pleft x + dx setY: pleft y.
-			pleft setX: pleft x setY: pleft y + dy.
-			 ]]
-]
-
-{ #category : #rendering }
+{ #category : #accessing }
 VoxelSpace >> screen [
 
 	^ screen

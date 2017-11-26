@@ -1,3 +1,6 @@
+"
+VoxelSpaceMorph new openInWindow.
+"
 Class {
 	#name : #VoxelSpaceMorph,
 	#superclass : #Morph,
@@ -5,10 +8,19 @@ Class {
 		'voxelSpace',
 		'position',
 		'angle',
-		'rendering'
+		'rendering',
+		'mouseControl',
+		'lastMousePosition',
+		'cameraHeight'
 	],
 	#category : #VoxelSpace
 }
+
+{ #category : #initialization }
+VoxelSpaceMorph >> defaultHeight [
+
+	^ 50
+]
 
 { #category : #initialization }
 VoxelSpaceMorph >> drawOn: aCanvas [
@@ -17,14 +29,9 @@ VoxelSpaceMorph >> drawOn: aCanvas [
 ]
 
 { #category : #initialization }
-VoxelSpaceMorph >> handlesKeyboard: evt [
+VoxelSpaceMorph >> handlesMouseDown: anEvent [
+		
 	^ true
-]
-
-{ #category : #initialization }
-VoxelSpaceMorph >> handlesMouseOver: anEvent [
-	"Enables capturing mouse over events"
-	^true.
 ]
 
 { #category : #initialization }
@@ -33,38 +40,16 @@ VoxelSpaceMorph >> initialize [
 	super initialize.
 	
 	voxelSpace := VoxelSpace new.
-	position := 600@150.
-	angle := 90.
-	self width: 800.
-	self height: 600.
+	position := 560@120.
+	angle := 120.
 	rendering := false.
+	cameraHeight := (voxelSpace heightOf: position) + self defaultHeight.
+	
+	mouseControl := false.
 
-	self render.
-
+	self extent: 800@600.
 	
 	
-]
-
-{ #category : #initialization }
-VoxelSpaceMorph >> keyDown: anEvent [
-	"Keyboard interaction dispatching"
-
-	| keyValue |
-	keyValue := anEvent keyValue.
-		
-	keyValue = 30 "Up"
-		ifTrue: [ position := position + (-10@0) ]. 
-	keyValue = 31 "Down"
-		ifTrue: [ position := position + (10@0) ]. 
-	keyValue = 29 "Right"
-		ifTrue: [ angle := angle - 10 ]. 
-	keyValue = 28 "Left"
-		ifTrue: [ angle := angle + 10 ]. 
-	
-	rendering ifFalse: [ 	
-		self render.
-		
-	self changed. ].
 ]
 
 { #category : #initialization }
@@ -78,9 +63,38 @@ VoxelSpaceMorph >> layoutChanged [
 ]
 
 { #category : #initialization }
-VoxelSpaceMorph >> mouseEnter: anEvent [
-	"Give keyboard focus when the mouse enters the morph"
-	anEvent hand newKeyboardFocus: self.
+VoxelSpaceMorph >> mouseDown: anEvent [
+
+	mouseControl := true. 
+	lastMousePosition := anEvent cursorPoint
+]
+
+{ #category : #initialization }
+VoxelSpaceMorph >> mouseMove: anEvent [
+	
+	| dif |
+	mouseControl 
+		ifFalse: [ ^ super mouseMove: anEvent ].
+	
+	dif := anEvent cursorPoint - lastMousePosition.
+	
+ 	angle := angle - dif x . 	
+ 	position := position x + (dif y * angle degreesToRadians sin)
+		@ (position y + (dif y * angle degreesToRadians cos)). 	
+	cameraHeight := (voxelSpace heightOf: position) + self defaultHeight.	
+	lastMousePosition := anEvent cursorPoint.
+	
+
+	self render.
+	self changed.
+
+]
+
+{ #category : #initialization }
+VoxelSpaceMorph >> mouseUp: anEvent [
+
+	mouseControl := false. 
+
 ]
 
 { #category : #initialization }
@@ -88,7 +102,15 @@ VoxelSpaceMorph >> render [
 
 	rendering := true.
 
-	voxelSpace render: position angle: angle degreesToRadians height: 90 horizon: 120 scale: (self width/self height)*225.0 distance: 800 screenWidth: self width asInteger screenHeight: self height asInteger.
+	voxelSpace 
+		render: position 
+		angle: angle degreesToRadians 
+		height: cameraHeight 
+		horizon: 120 
+		scale: (self width/self height)*225.0 
+		distance: 500 
+		screenWidth: self width asInteger 
+		screenHeight: self height asInteger.
 
 	rendering := false.
 ]
