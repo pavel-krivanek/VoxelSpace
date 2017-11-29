@@ -1,3 +1,6 @@
+"
+for more information see https://github.com/s-macke/VoxelSpace
+"
 Class {
 	#name : #VoxelSpace,
 	#superclass : #Object,
